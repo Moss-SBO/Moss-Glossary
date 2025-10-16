@@ -127,55 +127,62 @@
           order: [[0, 'asc']] // <= default order is Term asc
         });
 
-    // --- scoring ---
     function scoreRow(cells, rawTerm){
-      if(!rawTerm) return 0;
+  if(!rawTerm) return 0;
 
-      const [term, acr, def] = cells.map(html => $('<div>').html(html).text());
-      const q = rawTerm.trim().toLowerCase();
+  const [term, acr, def] = cells.map(html => $('<div>').html(html).text());
+  const q = rawTerm.trim().toLowerCase();
 
-      // 1) Big bonus for exact equality (Array == Array)
-      const EQ = { term: 1200, acr: 800 }; // tuneable
+  // 1) Big bonus for exact equality (whole cell)
+  const EQ = { term: 1200, acr: 800 };
 
-      // 2) Strong preference: starts-with > whole-word > partial
-      const W_WORD   = { term: 300, acr: 180, def: 20 };
-      const W_STARTS = { term: 120, acr: 60,  def: 5  };
-      const W_PART   = { term: 6,   acr: 3,   def: 0  }; // def partial basically ignored
+  // 2) Word semantics
+  // Whole-word == "ra" standing alone; Word-start-anywhere == "\bra" (NEW)
+  const W_WORD      = { term: 320, acr: 200, def: 20 };
+  const W_WSTARTANY = { term: 260, acr: 140, def: 10 }; // NEW: word starts with q anywhere in the cell
+  const W_STARTS    = { term: 120, acr: 60,  def: 5  }; // cell starts with q
+  const W_PART      = { term: 6,   acr: 3,   def: 0  }; // plain substring
 
-      // word-boundary regex for whole-word anywhere
-      const wb = new RegExp('\\b'+escapeRx(rawTerm)+'\\b','i');
+  const wb    = new RegExp('\\b'+escapeRx(rawTerm)+'\\b','i');
+  const wstart= new RegExp('\\b'+escapeRx(rawTerm),'i'); // NEW
 
-      // position bonus for matches closer to start of Term cell
-      const POS_TERM_MAX = 60; // cap
-      const idx = term.toLowerCase().indexOf(q);
-      const posBonus = idx >= 0 ? Math.max(0, POS_TERM_MAX - idx) : 0;
+  // Position bonus (Term only) — capped/lower so it can’t beat word-start-anywhere
+  const POS_TERM_MAX = 20; // was 60
+  const idx = term.toLowerCase().indexOf(q);
+  const posBonus = idx >= 0 ? Math.max(0, POS_TERM_MAX - idx) : 0;
 
-      let s = 0;
+  let s = 0;
 
-      // exact equality
-      if (term.trim().toLowerCase() === q) s += EQ.term;
-      if (acr.trim().toLowerCase()  === q) s += EQ.acr;
+  // Exact equality (whole cell)
+  if (term.trim().toLowerCase() === q) s += EQ.term;
+  if (acr.trim().toLowerCase()  === q) s += EQ.acr;
 
-      // starts-with
-      if (term.toLowerCase().startsWith(q)) s += W_STARTS.term;
-      if (acr.toLowerCase().startsWith(q))  s += W_STARTS.acr;
-      if (def.toLowerCase().startsWith(q))  s += W_STARTS.def;
+  // Cell starts-with
+  if (term.toLowerCase().startsWith(q)) s += W_STARTS.term;
+  if (acr.toLowerCase().startsWith(q))  s += W_STARTS.acr;
+  if (def.toLowerCase().startsWith(q))  s += W_STARTS.def;
 
-      // whole-word anywhere
-      if (wb.test(term)) s += W_WORD.term;
-      if (wb.test(acr))  s += W_WORD.acr;
-      if (wb.test(def))  s += W_WORD.def;
+  // Whole-word anywhere
+  if (wb.test(term)) s += W_WORD.term;
+  if (wb.test(acr))  s += W_WORD.acr;
+  if (wb.test(def))  s += W_WORD.def;
 
-      // partial contains (very light; def = 0)
-      if (term.toLowerCase().includes(q)) s += W_PART.term;
-      if (acr.toLowerCase().includes(q))  s += W_PART.acr;
-      if (def.toLowerCase().includes(q))  s += W_PART.def;
+  // NEW: Word-start anywhere (e.g., "Ratio" in Term for query "ra")
+  if (wstart.test(term)) s += W_WSTARTANY.term;
+  if (wstart.test(acr))  s += W_WSTARTANY.acr;
+  if (wstart.test(def))  s += W_WSTARTANY.def;
 
-      // position bonus only for Term column
-      s += posBonus;
+  // Plain substring (light)
+  if (term.toLowerCase().includes(q)) s += W_PART.term;
+  if (acr.toLowerCase().includes(q))  s += W_PART.acr;
+  if (def.toLowerCase().includes(q))  s += W_PART.def;
 
-      return s;
-    }
+  // Position bonus (Term only, capped)
+  s += posBonus;
+
+  return s;
+}
+
 
     function rescoreAndMaybeSort(raw){
       if(!raw){
